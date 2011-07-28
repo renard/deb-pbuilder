@@ -1,0 +1,519 @@
+#!/bin/bash
+
+# deb-pbuilder --- pbuilder front-end
+# Copyright © 2011 Sebastien Gross <seb•ɑƬ•chezwam•ɖɵʈ•org>
+# Last changed: 2011-07-28 13:14:29
+
+# This program is free software. It comes without any warranty, to
+# the extent permitted by applicable law. You can redistribute it
+# and/or modify it under the terms of the Do What The Fuck You Want
+# To Public License, Version 2, as published by Sam Hocevar. See
+# http://sam.zoy.org/wtfpl/COPYING for more details.
+
+VERSION="1.0"
+
+
+verbose=
+config=/etc/pbuilderrc
+pbuilder=$(which pbuilder)
+base_dir="/var/cache/pbuilder/bases"
+
+archs="amd64 i386"
+dists="lenny|squeeze"
+comps="main contrib non-free"
+types="deb|udeb|dsc"
+
+
+# dirs
+incoming_dir=/var/cache/deb-pbuilder/incoming
+result_dir=/var/cache/deb-pbuilder/result
+log_dir=/var/log/deb-pbuilder/log
+
+# Where to fetch new packages.
+deb_package_descr=http://packages.debian.org/source
+deb_default_dist="sid"
+
+
+# Distribution suffix
+dist_suffix="deb-pbuilder"
+# debian repository
+dr_dir=/var/cache/deb-pbuilder/repository
+# reprepro dir
+rr_root=/var/cache/deb-pbuilder/reprepro
+# reprepro binary
+rr_bin="/usr/bin/reprepro"
+# reprepro options
+rr_opts="
+    --ignore=missingfile
+    --basedir ${dr_dir}
+    --dbdir ${rr_root}/db
+    --confdir ${rr_root}/conf
+    --verbose
+"
+# reprepro calls
+rr="${rr_bin} ${rr_opts}"
+
+gpg_key=$(gpg --list-secret-keys | sed -n 's,^sec.*/\([^[:space:]]\+\).*,\1,p')
+
+
+function die() {
+    echo "$@" >&2
+    exit 1
+}
+
+function usage() {
+    exit_code=${1:-1}
+    cat <<EOF
+$(basename $0) Version ${VERSION}
+Copyright © 2010 Sébastien Gross <seb•ɑƬ•chezwam•ɖɵʈ•org>
+
+$(basename $0) [ options ] command [ command options]
+
+Options:
+  -c|--config     CONF  The configuration file to be used (Default: ${config})
+  -v|--verbose          Run in verbose mode.
+  -h|--help             This help screen.
+
+  -p|--pbuilder  PATH   Path to pbuilder (Default: ${pbuilder}).
+     --base-dir  PATH   Path to pbuilder bases (Default: ${base_dir}).
+Commands:
+
+  create-base          Create a new base.
+    [-a          ARCH]   Architecture to use.
+    [-d          DIST]   Distribution to use.
+
+  update-base          Update an existing base.
+    [-a          ARCH]   Architecture to use.
+    [-d          DIST]   Distribution to use.
+
+  get-pkg              Get a new package from source mirror.
+    [-d          DIST]   Source distribution to use (Default: ${deb_default_dist}).
+    PKG                  List of package to get.
+
+  build-pkg            Build a package.
+    [-a          ARCH]   Architecture to use.
+    [-d          DIST]   Distribution to use.
+    [-k]                 Keep result files.
+    PKG                  List of package to build.
+
+  add-pkg              Add a package to repository.
+    -A           ARCH    Target architecture.
+    -d           DIST    Target distribution.
+    -s           SUFFIX  distribution suffix.
+    -v           VERSION Package version.
+    PKG                  Package name.
+
+  sign-pkg             Sign a package to repository.
+    -a           ARCH    Target architecture.
+    -d           DIST    Target distribution.
+    -s           SUFFIX  distribution suffix.
+    -v           VERSION Package version.
+    -k           KEY     Key used to sign the package (Default: ${gpg_key}).
+    PKG                  Package name.
+
+
+  remove-pkg            Remove a package from repository.
+    [-a          ARCH]   Architecture to use.
+    [-d          DIST]   Distribution to use.
+    PKG                  List of package to build.
+
+  list-pkg              List packages from repository.
+    [-a          ARCH]   Architecture to use.
+    [-d          DIST]   Distribution to use.
+
+EOF
+    exit ${exit_code}
+}
+
+
+
+while test $# != 0; do
+    case "$1" in
+	-c|--config)
+            test -z "$2" && die "Need a parameter for $1."
+            config=$2
+            shift
+            ;;
+	-p|--pbuilder)
+            test -z "$2" && die "Need a parameter for $1."
+            pbuilder=$2
+            shift
+            ;;
+        -v|--verbose) verbose=1 ;;
+        --help|-h) usage 0 ;;
+	--) shift; break ;;
+        *) break ;;
+    esac
+    shift
+done
+
+if ! test -r ${config}; then
+    die "Configuration file '${config}' not found"
+fi
+# Finally load configuration file.
+source "${config}"
+
+# Update an existing base.
+# Param:
+#  - $a: list of architectures
+#  - $d: list of distributions
+function cmd_update_base() {
+    a=${archs}
+    d=${dists}
+    while test $# != 0; do
+        case "$1" in
+        -a) test -z "$2" && die "$1 requires a parameter"
+            a="$2"
+            shift ;;
+        -d) test -z "$2" && die "$1 requires a parameter"
+            d="$2"
+            shift ;;
+        --) shift break;;
+        *) usage;;
+        esac
+        shift
+    done
+
+    for dist in $(echo ${d} | tr "|" " "); do
+	for arch in $(echo ${a} | tr "|" " "); do
+	    ${pbuilder} update \
+		--basetgz ${base_dir}/${dist}-${arch}.tgz
+	done
+    done
+}
+
+
+# Add a package to distribution
+function cmd_add_pkg() {
+    a=
+    d=
+    s=${dist_suffix}
+    v=
+    while test $# != 0; do
+        case "$1" in
+            -a) test -z "$2" && die "$1 requires a parameter"
+		a="$2"
+		shift ;;
+            -d) test -z "$2" && die "$1 requires a parameter"
+		d="$2"
+		shift ;;
+            -s) test -z "$2" && die "$1 requires a parameter"
+		s="$2"
+		shift ;;
+            -v) test -z "$2" && die "$1 requires a parameter"
+		v="$2"
+		shift ;;
+            --) shift break;;
+            *) break;;
+        esac
+        shift
+    done
+    p="$1"
+    if test -z "${a}" -o -z "${d}" -o -z "${v}" -o -z "${p}"; then
+        die "command: add-pkg -A arch -d dist -v version package"
+    fi
+    D=${d}
+    if ! test -z "${s}"; then
+	D="${D}-${s}"
+    fi
+
+    cd ${rr_dir}
+    _dir="${result_dir}/${d}-${a}/${p}"
+    _changes="${_dir}/${p}_${v}_${a}.changes"
+    _dsc="${_dir}/${p}_${v}.dsc"
+    _src_files=$(sed -n "s,^ [0-9a-f]\{32\} [0-9]\+ \(.*\),\1,p" < ${_dsc})
+
+    _src_info=$(sed -n 's/^ [0-9a-f]\{32\} [0-9]\+ \(.*\.dsc\)/\1/p' < ${_changes})
+    _src_section=$(echo ${_src_info} | cut -d " " -f1)
+    _src_prio=$(echo ${_src_info} | cut -d " " -f2)
+
+
+    _deb_files=$(sed -n "s,^ [0-9a-f]\{32\} [0-9]\+ \(.*\.deb\),\1,p" < \
+        ${_changes})
+    _udeb_files=$(sed -n "s,^ [0-9a-f]\{32\} [0-9]\+ \(.*\.udeb\),\1,p" < \
+        ${_changes})
+    ${rr} -A "source" -S "${_src_section}" -P "${_src_prio}" includedsc \
+	"${D}" "${_dsc}" > /dev/null 2>&1
+    for f in ${_deb_files}; do
+        ${rr} includedeb "${D}" "${_dir}/${f}" > /dev/null 2>&1
+    done
+    for f in ${_udeb_files}; do
+        ${rr} includeudeb "${D}" "${_dir}/${f}" > /dev/null 2>&1
+    done
+    echo "Added packages by ${p} ($v) in ${D}:"
+    ${rr} -A "source|${a}" listfilter "${D}" "Source (==${p})|Package (==${p})"
+    cd -
+}
+
+function cmd_remove_pkg() {
+    a="${archs}|source"
+    d=
+    s=${dist_suffix}
+    while test $# != 0; do
+        case "$1" in
+        -a) test -z "$2" && die "$1 requires a parameter"
+            a="$2"
+            shift ;;
+        -d) test -z "$2" && die "$1 requires a parameter"
+            d="$2"
+            shift ;;
+        -s) test -z "$2" && die "$1 requires a parameter"
+            s="$2"
+            shift ;;
+        --) shift break;;
+        *) break;;
+            esac
+        shift
+    done
+    p="$1"
+    if test -z "${d}" -o -z "${p}"; then
+        die "command: remove-pkg [ -A arch ] -d dist package"
+    fi
+    D="${d}"
+    if ! test -z "${s}"; then
+	D="${d}-${s}"
+    fi
+
+    ${rr} -A "${a}" removefilter "${D}" "Source (== ${p})|Package (== ${p})"
+}
+
+
+function cmd_list_pkg() {
+    a="source|${archs}"
+    s=${dist_suffix}
+    while test $# != 0; do
+        case "$1" in
+        -a) test -z "$2" && die "$1 requires a parameter"
+            a="$2"
+            shift ;;
+        -s) test -z "$2" && die "$1 requires a parameter"
+            s="$2"
+            shift ;;
+        --) shift break;;
+        *) break;;
+            esac
+        shift
+    done
+    for dist in $(echo ${dists} | tr "|" " "); do
+	if test -z "${s}"; then
+	    D="${dist}"
+	else
+	    D="${dist}-${s}"
+	fi
+        ${rr} -A "${a}" -C "${comps}" -T "${types}" list "${D}" $*
+    done
+}
+
+
+# Create a new base.
+# Param:
+#  - $a: list of architectures
+#  - $d: list of distributions
+function cmd_create_base() {
+    a=${archs}
+    d=${dists}
+    while test $# != 0; do
+        case "$1" in
+        -a) test -z "$2" && die "$1 requires a parameter"
+            a="$2"
+            shift ;;
+        -d) test -z "$2" && die "$1 requires a parameter"
+            d="$2"
+            shift ;;
+        --) shift break;;
+        *) break;;
+        esac
+        shift
+    done
+
+    for dist in $(echo "${d}" | tr "|" " "); do
+	for arch in $(echo "${a}" | tr "|" " "); do
+	    othermirror=$(echo -n "${OTHERMIRROR_SRC}" | \
+		sed -e "s/@@DIST@@/${dist}/g" | tr '\n' '|')
+	    ${pbuilder} create \
+		--debootstrapopts \
+		--arch=${arch} \
+		--basetgz ${base_dir}/${dist}-${arch}.tgz \
+		--distribution ${dist} \
+		--mirror ${MIRRORSITE} \
+		--othermirror "${othermirror}"
+	done
+    done
+}
+
+
+# Sign Package.
+# Param:
+#  - $a: list of
+# Add a package to distribution
+function cmd_sign_pkg() {
+    local a=
+    local d=
+    local s=${dist_suffix}
+    local v=
+    local k=${gpg_key}
+    while test $# != 0; do
+        case "$1" in
+            -a) test -z "$2" && die "$1 requires a parameter"
+		a="$2"
+		shift ;;
+            -d) test -z "$2" && die "$1 requires a parameter"
+		d="$2"
+		shift ;;
+            -s) test -z "$2" && die "$1 requires a parameter"
+		s="$2"
+		shift ;;
+            -v) test -z "$2" && die "$1 requires a parameter"
+		v="$2"
+		shift ;;
+            -k) test -z "$2" && die "$1 requires a parameter"
+		k="$2"
+		shift ;;
+            --) shift break;;
+            *) break;;
+        esac
+        shift
+    done
+    p="$1"
+    if test -z "${a}" -o -z "${d}" -o -z "${v}" -o -z "${p}"; then
+        die "command: sign-pkg -a arch -d dist -v version package"
+    fi
+    D=${d}
+    if ! test -z "${s}"; then
+	D="${D}-${s}"
+    fi
+    _dir="${result_dir}/${d}-${a}/${p}"
+    _changes="${p}_${v}_${a}.changes"
+    if test -n "${k}"; then
+	cd "${_dir}"
+	debsign -k${k} "${_changes}"
+	cd -
+    fi
+}
+
+
+
+# Build a package.
+# Param:
+#  - $a: list of architectures
+#  - $d: list of distributions
+function cmd_build_pkg() {
+    a=${archs}
+    d=${dists}
+    pb_opts=
+    k=
+    while test $# != 0; do
+        case "$1" in
+            -a) test -z "$2" && die "$1 requires a parameter"
+		a="$2"
+		shift ;;
+            -d) test -z "$2" && die "$1 requires a parameter"
+		d="$2"
+		shift
+		;;
+	    -k) k=1 ;;
+	    -v) pb_opts="--debug" ;;
+            --) shift break;;
+            *) break;;
+        esac
+        shift
+    done
+
+    pkgs="$*"
+    if test -z "${d}" -o -z "${pkgs}"; then
+        usage
+    fi
+
+    for pkg in ${pkgs}; do
+	p=$(echo ${pkg} | cut -d '_' -f 1)
+	v=$(echo ${pkg} | cut -d '_' -f 2)
+	for dist in $(echo "${d}" | tr "|" " "); do
+	    for arch in $(echo "${a}" | tr "|" " "); do
+
+		if ! test -d ${result_dir}; then
+		    mkdir -p ${result_dir}/${dist}-${arch}/${p}
+		fi
+
+		${pbuilder} build ${pb_opts} \
+		    --basetgz ${base_dir}/${dist}-${arch}.tgz \
+		    --buildresult ${result_dir}/${dist}-${arch}/${p} \
+		    ${incoming_dir}/${pkg}.dsc 2>&1 | tee \
+		    ${log_dir}/${pkg}_${dist}-${arch}_$(date +%Y%m%d-%H%M%S).log
+
+		if test $? -eq 0; then
+		    cmd_sign_pkg -a ${arch} -d ${dist} -v ${v}+${dist} ${p}
+		    cmd_add_pkg -a ${arch} -d ${dist} -v ${v}+${dist} ${p}
+		    if test -z "${k}"; then
+			rm -vrf ${result_dir}/${dist}-${arch}/${p}
+		    fi
+		fi
+	    done
+	done
+    done
+}
+
+
+# Get a package from debian mirrors.
+# Param:
+#  - $d: source package distribution.
+function cmd_get_pkg() {
+    d=${deb_default_dist}
+    while test $# != 0; do
+        case "$1" in
+            -d) test -z "$2" && die "$1 requires a parameter"
+		d="$2"
+		shift ;;
+            --) shift break;;
+            *) break;;
+        esac
+        shift
+    done
+    pkgs="$*"
+    if test -z "${d}" -o -z "${pkgs}"; then
+        usage
+    fi
+
+    if ! test -d ${incoming_dir}; then
+	mkdir -p ${incoming_dir}
+    fi
+    for p in ${pkgs}; do
+        dsc=$(lynx -dump ${deb_package_descr}/${d}/${p} | \
+            sed -n "s,.*http://[^/]\+/debian\(/pool/.*\.dsc\),${MIRRORSITE}/\1,p")
+        if test -z "${dsc}"; then
+            echo "Package not found ${p}"
+            continue
+        fi
+        dn=$(dirname $dsc)
+        fdsc=$(basename $dsc)
+        echo "Downloading ${p} from ${d}"
+        wget -N -q -P "${incoming_dir}" "${dsc}" > /dev/null 2>&1
+        echo "  -> ${fdsc}"
+        f=$(sed -n 's,^ [0-9a-f]\{32\} [0-9]\+ \(.\+\)$,\1,p' < \
+            "${incoming_dir}/$fdsc")
+        for s in ${f}; do
+            echo "  -> ${s}"
+            wget -N -q -P "${incoming_dir}" "${dn}/${s}"
+        done
+    done
+}
+
+function _set_command() {
+    command=$(echo "$1" | sed 's/-/_/g')
+}
+
+command=
+while test $# != 0 && test -z "${command}"; do
+    case "$1" in
+	create-base|update-base|get-pkg|build-pkg|add-pkg|remove-pkg|list-pkg)
+            _set_command "$1"
+            ;;
+        --) shift break;;
+        help|-h|--help) usage;;
+        *) break;;
+    esac
+    shift
+done
+test -z "${command}" && usage 1
+
+"cmd_${command}" "$@"
+

@@ -1,0 +1,44 @@
+# Configuration file for deb-pbuilder
+# -*- sh -*-
+
+verbose=
+config=/etc/pbuilderrc
+pbuilder=$(which pbuilder)
+base_dir="/var/cache/pbuilder/bases"
+
+archs="amd64 i386"
+dists="lenny|squeeze"
+comps="main contrib non-free"
+types="deb|udeb|dsc"
+
+
+# dirs
+incoming_dir=/var/cache/deb-pbuilder/incoming
+result_dir=/var/cache/deb-pbuilder/result
+log_dir=/var/log/deb-pbuilder/log
+
+# Where to fetch new packages.
+deb_package_descr=http://packages.debian.org/source
+deb_default_dist="sid"
+
+
+# Distribution suffix
+dist_suffix="deb-pbuilder"
+# debian repository
+dr_dir=/var/cache/deb-pbuilder/repository
+# reprepro dir
+rr_root=/var/cache/deb-pbuilder/reprepro
+# reprepro binary
+rr_bin="/usr/bin/reprepro"
+# reprepro options
+rr_opts="
+    --ignore=missingfile
+    --basedir ${dr_dir}
+    --dbdir ${rr_root}/db
+    --confdir ${rr_root}/conf
+    --verbose
+"
+# reprepro calls
+rr="${rr_bin} ${rr_opts}"
+
+gpg_key=$(gpg --list-secret-keys | sed -n 's,^sec.*/\([^[:space:]]\+\).*,\1,p')
