@@ -1,0 +1,3 @@
+usr/bin
+var/log/deb-pbuilder
+var/cache/deb-pbuilder/incoming

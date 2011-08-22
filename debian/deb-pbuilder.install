@@ -1,0 +1,2 @@
+deb-pbuilder usr/bin
+deb-pbuilderrc etc

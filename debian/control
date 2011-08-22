@@ -1,0 +1,13 @@
+Source: deb-pbuilder
+Section: unknown
+Priority: extra
+Maintainer: Sébastien Gross <seb•ɑƬ•chezwam•ɖɵʈ•org>
+Build-Depends: debhelper (>= 7.0.50), quilt (>=0.46-7)
+Standards-Version: 3.8.0
+Homepage: <insert the upstream URL, if relevant>
+
+Package: deb-pbuilder
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: create a debian repository using pbuilder 
+ Automate package backporting using pbuilder. 
