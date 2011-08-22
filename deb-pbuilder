@@ -2,7 +2,7 @@
 
 # deb-pbuilder --- pbuilder front-end
 # Copyright © 2011 Sebastien Gross <seb•ɑƬ•chezwam•ɖɵʈ•org>
-# Last changed: 2011-07-28 13:14:29
+# Last changed: 2011-08-22 11:49:08
 
 # This program is free software. It comes without any warranty, to
 # the extent permitted by applicable law. You can redistribute it
@@ -162,14 +162,14 @@ function cmd_update_base() {
     d=${dists}
     while test $# != 0; do
         case "$1" in
-        -a) test -z "$2" && die "$1 requires a parameter"
-            a="$2"
-            shift ;;
-        -d) test -z "$2" && die "$1 requires a parameter"
-            d="$2"
-            shift ;;
-        --) shift break;;
-        *) usage;;
+            -a) test -z "$2" && die "$1 requires a parameter"
+		a="$2"
+		shift ;;
+            -d) test -z "$2" && die "$1 requires a parameter"
+		d="$2"
+		shift ;;
+            --) shift break;;
+            *) usage;;
         esac
         shift
     done
@@ -251,18 +251,18 @@ function cmd_remove_pkg() {
     s=${dist_suffix}
     while test $# != 0; do
         case "$1" in
-        -a) test -z "$2" && die "$1 requires a parameter"
-            a="$2"
-            shift ;;
-        -d) test -z "$2" && die "$1 requires a parameter"
-            d="$2"
-            shift ;;
-        -s) test -z "$2" && die "$1 requires a parameter"
-            s="$2"
-            shift ;;
-        --) shift break;;
-        *) break;;
-            esac
+            -a) test -z "$2" && die "$1 requires a parameter"
+		a="$2"
+		shift ;;
+            -d) test -z "$2" && die "$1 requires a parameter"
+		d="$2"
+		shift ;;
+            -s) test -z "$2" && die "$1 requires a parameter"
+		s="$2"
+		shift ;;
+            --) shift break;;
+            *) break;;
+        esac
         shift
     done
     p="$1"
@@ -283,15 +283,15 @@ function cmd_list_pkg() {
     s=${dist_suffix}
     while test $# != 0; do
         case "$1" in
-        -a) test -z "$2" && die "$1 requires a parameter"
-            a="$2"
-            shift ;;
-        -s) test -z "$2" && die "$1 requires a parameter"
-            s="$2"
-            shift ;;
-        --) shift break;;
-        *) break;;
-            esac
+            -a) test -z "$2" && die "$1 requires a parameter"
+		a="$2"
+		shift ;;
+            -s) test -z "$2" && die "$1 requires a parameter"
+		s="$2"
+		shift ;;
+            --) shift break;;
+            *) break;;
+        esac
         shift
     done
     for dist in $(echo ${dists} | tr "|" " "); do
@@ -314,14 +314,14 @@ function cmd_create_base() {
     d=${dists}
     while test $# != 0; do
         case "$1" in
-        -a) test -z "$2" && die "$1 requires a parameter"
-            a="$2"
-            shift ;;
-        -d) test -z "$2" && die "$1 requires a parameter"
-            d="$2"
-            shift ;;
-        --) shift break;;
-        *) break;;
+            -a) test -z "$2" && die "$1 requires a parameter"
+		a="$2"
+		shift ;;
+            -d) test -z "$2" && die "$1 requires a parameter"
+		d="$2"
+		shift ;;
+            --) shift break;;
+            *) break;;
         esac
         shift
     done
@@ -516,4 +516,3 @@ done
 test -z "${command}" && usage 1
 
 "cmd_${command}" "$@"
-
